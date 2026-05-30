@@ -12,12 +12,13 @@ export default function App() {
     useRecipes();
 
   // ── State ───────────────────────────────────────────────────────────────────
-  const [recipes, setRecipes] = useState([]);
-  const [source, setSource] = useState(null); // 'database' | 'api' | null
+  const [recipes, setRecipes] = useState([]);   // merged display list
+  const [dbCount, setDbCount] = useState(0);    // # from local DB on last search
+  const [apiCount, setApiCount] = useState(0);  // # new from API on last search
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState(null); // recipe being edited
+  const [editTarget, setEditTarget] = useState(null);
   const [toast, setToast] = useState(null); // { message, type }
 
   // ── Refs for GSAP ──────────────────────────────────────────────────────────
@@ -45,9 +46,10 @@ export default function App() {
     const load = async () => {
       setIsLoading(true);
       try {
-        const { source: src, recipes: data } = await fetchAllRecipes();
+        const { recipes: data } = await fetchAllRecipes();
         setRecipes(data);
-        setSource(src);
+        setDbCount(data.length);
+        setApiCount(0);
       } catch (err) {
         showToast('Failed to load recipes. Is the backend running?', 'error');
       } finally {
@@ -68,13 +70,15 @@ export default function App() {
   const handleSearch = useCallback(
     async (query) => {
       if (!query) {
-        // Reset: show all
+        // Reset: reload all
         setIsLoading(true);
         setSearchQuery('');
+        setDbCount(0);
+        setApiCount(0);
         try {
-          const { source: src, recipes: data } = await fetchAllRecipes();
+          const { recipes: data } = await fetchAllRecipes();
           setRecipes(data);
-          setSource(src);
+          setDbCount(data.length);
         } catch {
           showToast('Failed to load recipes.', 'error');
         } finally {
@@ -86,9 +90,12 @@ export default function App() {
       setIsLoading(true);
       setSearchQuery(query);
       try {
-        const { source: src, recipes: data } = await searchRecipes(query);
-        setRecipes(data);
-        setSource(src);
+        // Backend now returns { dbRecipes, apiRecipes, total }
+        const { dbRecipes, apiRecipes } = await searchRecipes(query);
+        // DB results first, then new API results
+        setRecipes([...dbRecipes, ...apiRecipes]);
+        setDbCount(dbRecipes.length);
+        setApiCount(apiRecipes.length);
       } catch (err) {
         showToast('Search failed. Please try again.', 'error');
       } finally {
@@ -170,8 +177,8 @@ export default function App() {
           <SearchBar
             onSearch={handleSearch}
             isLoading={isLoading}
-            source={source}
-            resultCount={recipes.length}
+            dbCount={dbCount}
+            apiCount={apiCount}
             query={searchQuery}
           />
         </div>
@@ -183,9 +190,22 @@ export default function App() {
               {searchQuery ? 'Search Results' : 'All Recipes'}
             </h2>
             <p className="text-sm text-slate-500 mt-0.5">
-              {searchQuery
-                ? `Showing results for "${searchQuery}"`
-                : 'Browse your complete recipe collection'}
+              {searchQuery ? (
+                <>
+                  {dbCount > 0 && (
+                    <span className="text-emerald-400">{dbCount} from your vault</span>
+                  )}
+                  {dbCount > 0 && apiCount > 0 && <span className="text-slate-600"> · </span>}
+                  {apiCount > 0 && (
+                    <span className="text-blue-400">{apiCount} new from API</span>
+                  )}
+                  {dbCount === 0 && apiCount === 0 && !isLoading && (
+                    <span>No results found for "{searchQuery}"</span>
+                  )}
+                </>
+              ) : (
+                'Browse your complete recipe collection'
+              )}
             </p>
           </div>
         </div>
