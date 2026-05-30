@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import axios from 'axios';
 
-// ── Debounce hook ─────────────────────────────────────────────────────────────
+//    Debounce hook                                                              
 function useDebounce(value, delay) {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -16,7 +16,7 @@ function useDebounce(value, delay) {
   return debounced;
 }
 
-// ── Highlight matched text (only when row is not active) ──────────────────────
+//    Highlight matched text (only when row is not active)                       
 function HighlightMatch({ text, query, isActive }) {
   if (!query || isActive) return <span>{text}</span>;
 
@@ -50,7 +50,7 @@ export default function SearchBar({ onSearch, isLoading, dbCount, apiCount, quer
   const inputRef     = useRef(null);
   const debouncedInput = useDebounce(inputValue, 300);
 
-  // ── Compute fixed position from the container's bounding rect ─────────────
+  //    Compute fixed position from the container's bounding rect              
   const updateDropPos = useCallback(() => {
     if (containerRef.current) {
       const r = containerRef.current.getBoundingClientRect();
@@ -76,7 +76,7 @@ export default function SearchBar({ onSearch, isLoading, dbCount, apiCount, quer
     };
   }, [isDropdownOpen, updateDropPos]);
 
-  // ── Fetch suggestions ─────────────────────────────────────────────────────
+  //    Fetch suggestions                                                      
   useEffect(() => {
     const run = async () => {
       const q = debouncedInput.trim();
@@ -102,7 +102,7 @@ export default function SearchBar({ onSearch, isLoading, dbCount, apiCount, quer
     run();
   }, [debouncedInput]);
 
-  // ── Close on outside click ────────────────────────────────────────────────
+  //    Close on outside click                                                 
   useEffect(() => {
     const handleOutside = (e) => {
       // Check both the container AND the portal dropdown (which is in body)
@@ -118,7 +118,7 @@ export default function SearchBar({ onSearch, isLoading, dbCount, apiCount, quer
     return () => document.removeEventListener('mousedown', handleOutside);
   }, []);
 
-  // ── Select a suggestion ───────────────────────────────────────────────────
+  //    Select a suggestion                                                    
   const selectSuggestion = useCallback(
     (name) => {
       setInputValue(name);
@@ -130,7 +130,7 @@ export default function SearchBar({ onSearch, isLoading, dbCount, apiCount, quer
     [onSearch]
   );
 
-  // ── Keyboard navigation ───────────────────────────────────────────────────
+  //    Keyboard navigation                                                    
   const handleKeyDown = (e) => {
     if (!isDropdownOpen || suggestions.length === 0) return;
     if (e.key === 'ArrowDown') {
@@ -168,7 +168,7 @@ export default function SearchBar({ onSearch, isLoading, dbCount, apiCount, quer
   const totalResults = (dbCount || 0) + (apiCount || 0);
   const hasResultMeta = query && !isLoading;
 
-  // ── Portal dropdown markup ────────────────────────────────────────────────
+  //    Portal dropdown markup                                                 
   const dropdown = isDropdownOpen && suggestions.length > 0
     ? createPortal(
         <div
@@ -253,7 +253,7 @@ export default function SearchBar({ onSearch, isLoading, dbCount, apiCount, quer
 
   return (
     <div className="w-full max-w-3xl mx-auto space-y-3">
-      {/* ── Search form ── */}
+      {/*    Search form    */}
       <div ref={containerRef} className="relative">
         <form onSubmit={handleSubmit}>
           <div className="search-glow relative flex items-center gap-3 bg-slate-800/50 border border-slate-700 rounded-2xl p-2 pl-4 transition-all duration-300">
@@ -305,7 +305,7 @@ export default function SearchBar({ onSearch, isLoading, dbCount, apiCount, quer
       {/* Portal renders here (in document.body, above everything) */}
       {dropdown}
 
-      {/* ── Result metadata ── */}
+      {/*    Result metadata    */}
       {hasResultMeta && (
         <div className="flex flex-wrap items-center gap-2 px-1 pt-1">
           {dbCount > 0 && (
@@ -327,7 +327,7 @@ export default function SearchBar({ onSearch, isLoading, dbCount, apiCount, quer
             <span className="text-sm text-slate-400">
               for{' '}
               <span className="font-medium text-emerald-400">"{query}"</span>
-              <span className="ml-1 text-slate-600">— {totalResults} total</span>
+              <span className="ml-1 text-slate-600">  {totalResults} total</span>
             </span>
           )}
         </div>
