@@ -1,0 +1,76 @@
+# ════════════════════════════════════════════════════════════════════════════
+# 🤖  Dependabot — Automated Dependency Updates
+#
+# Opens PRs automatically when newer versions of:
+#   • backend npm packages     (weekly, Monday)
+#   • frontend npm packages    (weekly, Monday)
+#   • GitHub Actions versions  (weekly, Monday)
+# ════════════════════════════════════════════════════════════════════════════
+
+version: 2
+
+updates:
+
+  # ── Backend npm dependencies ────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - backend
+    commit-message:
+      prefix: 'chore(backend-deps)'
+    reviewers:
+      - cusaldmsr          # replace with your GitHub username
+    ignore:
+      # Stay on nodemon minor — major changes can break scripts
+      - dependency-name: nodemon
+        update-types: ['version-update:semver-major']
+
+  # ── Frontend npm dependencies ───────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - frontend
+    commit-message:
+      prefix: 'chore(frontend-deps)'
+    reviewers:
+      - cusaldmsr
+    groups:
+      # Group all Radix UI updates into a single PR
+      radix-ui:
+        patterns:
+          - '@radix-ui/*'
+      # Group all Tailwind updates into one PR
+      tailwind:
+        patterns:
+          - 'tailwindcss'
+          - '@tailwindcss/*'
+          - 'tailwind-merge'
+
+  # ── GitHub Actions versions ─────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - ci-cd
+    commit-message:
+      prefix: 'chore(actions)'
