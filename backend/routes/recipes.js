@@ -5,16 +5,32 @@ import Recipe from '../models/Recipe.js';
 const router = express.Router();
 
 // ─── GET /api/recipes ─────────────────────────────────────────────────────────
-// Fetch ALL recipes from the local database (for initial page load)
+// Paginated fetch of all local recipes (initial load + infinite scroll)
 router.get('/', async (req, res) => {
   try {
-    const recipes = await Recipe.find().sort({ createdAt: -1 });
-    res.json({ source: 'database', recipes });
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.min(50, parseInt(req.query.limit) || 8);
+    const skip  = (page - 1) * limit;
+
+    const [recipes, total] = await Promise.all([
+      Recipe.find().sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Recipe.countDocuments(),
+    ]);
+
+    res.json({
+      source: 'database',
+      recipes,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+      hasMore: skip + recipes.length < total,
+    });
   } catch (err) {
     console.error('GET /api/recipes error:', err.message);
     res.status(500).json({ message: 'Server error fetching recipes.' });
   }
 });
+
 
 // ─── GET /api/recipes/suggestions?q=query ────────────────────────────────────
 // Fast typeahead: returns up to 6 recipe names from the local DB
