@@ -4,7 +4,7 @@ import Recipe from '../models/Recipe.js';
 
 const router = express.Router();
 
-// ─── GET /api/recipes ────────────────────────────────────────────────────────
+// ─── GET /api/recipes ─────────────────────────────────────────────────────────
 // Fetch ALL recipes from the local database (for initial page load)
 router.get('/', async (req, res) => {
   try {
@@ -16,11 +16,37 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ─── GET /api/recipes/suggestions?q=query ────────────────────────────────────
+// Fast typeahead: returns up to 6 recipe names from the local DB
+router.get('/suggestions', async (req, res) => {
+  const query = req.query.q?.trim();
+
+  if (!query || query.length < 2) {
+    return res.json({ suggestions: [] });
+  }
+
+  try {
+    const suggestions = await Recipe.find(
+      { name: { $regex: query, $options: 'i' } },
+      { name: 1, _id: 1, image: 1, source: 1 }
+    )
+      .limit(6)
+      .lean();
+
+    res.json({ suggestions });
+  } catch (err) {
+    console.error('GET /api/recipes/suggestions error:', err.message);
+    res.status(500).json({ message: 'Server error fetching suggestions.' });
+  }
+});
+
 // ─── GET /api/recipes/search?q=query ─────────────────────────────────────────
-// Smart Caching Proxy:
-//   1. Check local MongoDB first (case-insensitive regex on name)
-//   2. If found → return with source: 'database'
-//   3. If NOT found → hit DummyJSON API, upsert results, return with source: 'api'
+// Smart Hybrid Search:
+//   1. Query local MongoDB for matching recipes  → dbRecipes
+//   2. ALWAYS also query DummyJSON external API
+//   3. Filter API results to only those NOT already in DB → apiRecipes (new)
+//   4. Upsert the new API recipes into MongoDB
+//   5. Return { dbRecipes, apiRecipes } so the frontend can show both with labels
 router.get('/search', async (req, res) => {
   const query = req.query.q?.trim();
 
@@ -29,57 +55,80 @@ router.get('/search', async (req, res) => {
   }
 
   try {
-    // Step 1: Search local DB
-    const localResults = await Recipe.find({
+    // ── Step 1: Search local DB ───────────────────────────────────────────────
+    const dbRecipes = await Recipe.find({
       name: { $regex: query, $options: 'i' },
-    });
+    }).lean();
 
-    if (localResults.length > 0) {
-      console.log(`[Cache HIT] "${query}" found in DB (${localResults.length} results)`);
-      return res.json({ source: 'database', recipes: localResults });
+    console.log(`[DB] "${query}" → ${dbRecipes.length} local result(s)`);
+
+    // ── Step 2: Always fetch from external API ────────────────────────────────
+    let apiRecipes = [];
+
+    try {
+      const { data } = await axios.get(
+        `https://dummyjson.com/recipes/search?q=${encodeURIComponent(query)}`,
+        { timeout: 8000 }
+      );
+
+      if (data.recipes && data.recipes.length > 0) {
+        // Build a set of external IDs already present in the DB
+        const existingExternalIds = new Set(
+          dbRecipes.map((r) => r.id).filter(Boolean)
+        );
+
+        // Only keep API results that are NOT already stored locally
+        const newFromApi = data.recipes.filter(
+          (r) => !existingExternalIds.has(String(r.id))
+        );
+
+        console.log(
+          `[API] "${query}" → ${data.recipes.length} total, ${newFromApi.length} new (not in DB)`
+        );
+
+        if (newFromApi.length > 0) {
+          // Map to schema
+          const mapped = newFromApi.map((r) => ({
+            id: String(r.id),
+            name: r.name,
+            ingredients: r.ingredients || [],
+            instructions: r.instructions || [],
+            prepTimeMinutes: r.prepTimeMinutes || 0,
+            cookTimeMinutes: r.cookTimeMinutes || 0,
+            servings: r.servings || 1,
+            image: r.image || '',
+            source: 'DummyJSON',
+          }));
+
+          // Upsert into DB
+          const bulkOps = mapped.map((recipe) => ({
+            updateOne: {
+              filter: { id: recipe.id },
+              update: { $set: recipe },
+              upsert: true,
+            },
+          }));
+
+          await Recipe.bulkWrite(bulkOps);
+
+          // Fetch from DB so they have _id
+          apiRecipes = await Recipe.find({
+            id: { $in: mapped.map((r) => r.id) },
+          }).lean();
+
+          console.log(`[STORE] Saved ${apiRecipes.length} new recipe(s) for "${query}"`);
+        }
+      }
+    } catch (apiErr) {
+      // External API failure should not break the whole search
+      console.warn(`[API] External API error for "${query}":`, apiErr.message);
     }
 
-    // Step 2: Fetch from external API
-    console.log(`[Cache MISS] "${query}" not in DB — fetching from DummyJSON...`);
-    const { data } = await axios.get(
-      `https://dummyjson.com/recipes/search?q=${encodeURIComponent(query)}`
-    );
-
-    if (!data.recipes || data.recipes.length === 0) {
-      return res.json({ source: 'api', recipes: [] });
-    }
-
-    // Step 3: Map API response → Mongoose schema
-    const mappedRecipes = data.recipes.map((r) => ({
-      id: String(r.id),
-      name: r.name,
-      ingredients: r.ingredients || [],
-      instructions: r.instructions || [],
-      prepTimeMinutes: r.prepTimeMinutes || 0,
-      cookTimeMinutes: r.cookTimeMinutes || 0,
-      servings: r.servings || 1,
-      image: r.image || '',
-      source: 'DummyJSON',
-    }));
-
-    // Step 4: Upsert all recipes into DB (avoid duplicate ID crashes)
-    const bulkOps = mappedRecipes.map((recipe) => ({
-      updateOne: {
-        filter: { id: recipe.id },
-        update: { $set: recipe },
-        upsert: true,
-      },
-    }));
-
-    await Recipe.bulkWrite(bulkOps);
-
-    // Step 5: Return newly saved records from DB so they include _id
-    const savedRecipes = await Recipe.find({
-      id: { $in: mappedRecipes.map((r) => r.id) },
+    res.json({
+      dbRecipes,       // recipes already in local DB
+      apiRecipes,      // newly fetched from API (and now also saved to DB)
+      total: dbRecipes.length + apiRecipes.length,
     });
-
-    console.log(`[Cache STORE] Saved ${savedRecipes.length} recipes from DummyJSON for "${query}"`);
-    res.json({ source: 'api', recipes: savedRecipes });
   } catch (err) {
     console.error('GET /api/recipes/search error:', err.message);
     res.status(500).json({ message: 'Server error during search.' });
@@ -87,18 +136,10 @@ router.get('/search', async (req, res) => {
 });
 
 // ─── POST /api/recipes ────────────────────────────────────────────────────────
-// Create a new recipe (User-created)
 router.post('/', async (req, res) => {
   try {
-    const {
-      name,
-      ingredients,
-      instructions,
-      prepTimeMinutes,
-      cookTimeMinutes,
-      servings,
-      image,
-    } = req.body;
+    const { name, ingredients, instructions, prepTimeMinutes, cookTimeMinutes, servings, image } =
+      req.body;
 
     if (!name) {
       return res.status(400).json({ message: 'Recipe name is required.' });
@@ -124,7 +165,6 @@ router.post('/', async (req, res) => {
 });
 
 // ─── PUT /api/recipes/:id ─────────────────────────────────────────────────────
-// Update an existing recipe by its MongoDB _id
 router.put('/:id', async (req, res) => {
   try {
     const updated = await Recipe.findByIdAndUpdate(
@@ -145,14 +185,12 @@ router.put('/:id', async (req, res) => {
 });
 
 // ─── DELETE /api/recipes/:id ──────────────────────────────────────────────────
-// Remove a recipe by its MongoDB _id
 router.delete('/:id', async (req, res) => {
   try {
     const deleted = await Recipe.findByIdAndDelete(req.params.id);
 
     if (!deleted) {
-      return res.status(404).json({ message: 'Recipe not found.' });
-    }
+      return res.status(404).json({ message: 'Recipe not found.' });}
 
     res.json({ message: 'Recipe deleted successfully.', id: req.params.id });
   } catch (err) {
