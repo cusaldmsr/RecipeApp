@@ -48,7 +48,7 @@ export default function RecipeDetailModal({ recipe, isOpen, onClose, onEdit }) {
     >
       <div className="relative w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl overflow-hidden">
 
-        {/* ── Hero image ── */}
+        {/*    Hero image    */}
         <div className="relative h-52 shrink-0 overflow-hidden bg-slate-800">
           {image ? (
             <img
@@ -91,18 +91,18 @@ export default function RecipeDetailModal({ recipe, isOpen, onClose, onEdit }) {
           </div>
         </div>
 
-        {/* ── Scrollable body ── */}
+        {/*    Scrollable body    */}
         <div className="flex-1 overflow-y-auto">
 
           {/* Stats bar */}
           <div className="grid grid-cols-3 divide-x divide-slate-800 border-b border-slate-800">
-            <StatCell icon={<Clock className="h-4 w-4 text-emerald-400" />} label="Prep" value={prepTimeMinutes > 0 ? `${prepTimeMinutes} min` : '—'} />
-            <StatCell icon={<Flame className="h-4 w-4 text-orange-400" />}  label="Cook" value={cookTimeMinutes > 0 ? `${cookTimeMinutes} min` : '—'} />
-            <StatCell icon={<Users className="h-4 w-4 text-blue-400" />}    label="Serves" value={servings > 0 ? servings : '—'} />
+            <StatCell icon={<Clock className="h-4 w-4 text-emerald-400" />} label="Prep" value={prepTimeMinutes > 0 ? `${prepTimeMinutes} min` : ' '} />
+            <StatCell icon={<Flame className="h-4 w-4 text-orange-400" />}  label="Cook" value={cookTimeMinutes > 0 ? `${cookTimeMinutes} min` : ' '} />
+            <StatCell icon={<Users className="h-4 w-4 text-blue-400" />}    label="Serves" value={servings > 0 ? servings : ' '} />
           </div>
 
           <div className="p-6 space-y-7">
-            {/* ── Ingredients ── */}
+            {/*    Ingredients    */}
             {ingredients.length > 0 && (
               <section>
                 <SectionHeader icon={<ListChecks className="h-5 w-5 text-emerald-400" />} title="Ingredients" count={ingredients.length} />
@@ -119,7 +119,7 @@ export default function RecipeDetailModal({ recipe, isOpen, onClose, onEdit }) {
               </section>
             )}
 
-            {/* ── Instructions ── */}
+            {/*    Instructions    */}
             {instructions.length > 0 && (
               <section>
                 <SectionHeader icon={<BookOpen className="h-5 w-5 text-blue-400" />} title="Instructions" count={instructions.length + ' steps'} />
@@ -146,7 +146,7 @@ export default function RecipeDetailModal({ recipe, isOpen, onClose, onEdit }) {
           </div>
         </div>
 
-        {/* ── Footer actions ── */}
+        {/*    Footer actions    */}
         <div className="flex items-center justify-between gap-3 border-t border-slate-800 bg-slate-900 px-6 py-4 shrink-0">
           <div className="text-xs text-slate-500">
             {totalTime > 0 && <span>⏱ Total time: <strong className="text-slate-300">{totalTime} min</strong></span>}
@@ -171,7 +171,7 @@ export default function RecipeDetailModal({ recipe, isOpen, onClose, onEdit }) {
   );
 }
 
-// ── Small helpers ─────────────────────────────────────────────────────────────
+//    Small helpers                                                              
 
 function StatCell({ icon, label, value }) {
   return (
