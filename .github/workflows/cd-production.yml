@@ -1,0 +1,290 @@
+# ════════════════════════════════════════════════════════════════════════════
+# 🚀  CD — Deploy to PRODUCTION
+#
+# Triggers when:
+#   • A push lands on `main` AND the CI workflow completes successfully.
+#
+# Deployment targets:
+#   • Backend  → Render.com  (triggered via deploy-hook URL)
+#   • Frontend → Vercel      (via official Vercel GitHub Action)
+#
+# Required GitHub Secrets (Settings → Secrets → Actions):
+#   RENDER_BACKEND_DEPLOY_HOOK_URL   — Render deploy hook for the backend service
+#   RENDER_BACKEND_SERVICE_URL       — Public URL of your Render backend (for health check)
+#   VERCEL_TOKEN                     — Vercel personal access token
+#   VERCEL_ORG_ID                    — Your Vercel team / personal org ID
+#   VERCEL_PROJECT_ID                — Vercel project ID for the frontend
+#   VITE_API_BASE_URL                — Production backend URL injected at build time
+#   MONGO_URI                        — (used by Render directly, not here)
+#
+# Required GitHub Environment: "production"  (add manual approval gate there)
+# ════════════════════════════════════════════════════════════════════════════
+
+name: 🚀 CD — Deploy to Production
+
+on:
+  workflow_run:
+    workflows: ['🔍 CI — Continuous Integration']
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: cd-production
+  cancel-in-progress: false    # never cancel an in-flight production deploy
+
+env:
+  NODE_VERSION: '20.x'
+
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+
+  # Guard: only proceed if CI passed
+  ci-check:
+    name: 🛡️ CI Gate Check
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: ✅ CI passed — proceeding to deploy
+        run: |
+          echo "CI run #${{ github.event.workflow_run.id }} passed."
+          echo "Deploying commit: ${{ github.event.workflow_run.head_sha }}"
+
+
+  # ╔══════════════════════════════════╗
+  # ║   BACKEND DEPLOY                ║
+  # ╚══════════════════════════════════╝
+
+  deploy-backend:
+    name: 🟢 Deploy Backend → Render
+    runs-on: ubuntu-latest
+    needs: ci-check
+    environment:
+      name: production
+      url: ${{ secrets.RENDER_BACKEND_SERVICE_URL }}
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: 🚀 Trigger Render deploy hook
+        run: |
+          echo "Triggering backend deployment on Render..."
+          HTTP_STATUS=$(curl -s -o /tmp/render_response.json -w "%{http_code}" \
+            -X POST "${{ secrets.RENDER_BACKEND_DEPLOY_HOOK_URL }}")
+
+          cat /tmp/render_response.json
+
+          if [ "$HTTP_STATUS" -ne 201 ] && [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "❌ Render deploy hook returned HTTP $HTTP_STATUS"
+            exit 1
+          fi
+          echo "✅ Deploy triggered successfully (HTTP $HTTP_STATUS)"
+
+      - name: ⏳ Wait for Render deployment to boot (up to 5 min)
+        run: |
+          URL="${{ secrets.RENDER_BACKEND_SERVICE_URL }}/api/health"
+          echo "Polling: $URL"
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Backend is live! (attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i/30 — HTTP $STATUS — retrying in 10s..."
+            sleep 10
+          done
+          echo "❌ Backend health check timed out after 5 minutes"
+          exit 1
+
+      - name: 📋 Deploy summary
+        if: always()
+        run: |
+          echo "### 🟢 Backend Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Render.com |" >> $GITHUB_STEP_SUMMARY
+          echo "| URL | ${{ secrets.RENDER_BACKEND_SERVICE_URL }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.event.workflow_run.head_sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+
+
+  # ╔══════════════════════════════════╗
+  # ║   FRONTEND DEPLOY               ║
+  # ╚══════════════════════════════════╝
+
+  deploy-frontend:
+    name: ⚛️ Deploy Frontend → Vercel
+    runs-on: ubuntu-latest
+    needs: deploy-backend          # wait for backend to be live first
+    environment:
+      name: production
+      url: ${{ steps.vercel-deploy.outputs.url }}
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: ⚙️ Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 📦 Install dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: 🏗️ Build production bundle
+        working-directory: ./frontend
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+
+      - name: 🚀 Deploy to Vercel (production)
+        id: vercel-deploy
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+          working-directory: ./frontend
+
+      - name: 🌐 Verify frontend is reachable
+        run: |
+          FRONTEND_URL="${{ steps.vercel-deploy.outputs.url }}"
+          echo "Verifying: $FRONTEND_URL"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$FRONTEND_URL" || echo "000")
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ Frontend is live at $FRONTEND_URL"
+          else
+            echo "⚠️ Unexpected HTTP status: $STATUS (Vercel propagation may still be in progress)"
+          fi
+
+      - name: 📋 Deploy summary
+        if: always()
+        run: |
+          echo "### ⚛️ Frontend Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Vercel |" >> $GITHUB_STEP_SUMMARY
+          echo "| URL | ${{ steps.vercel-deploy.outputs.url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.event.workflow_run.head_sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+
+
+  # ╔══════════════════════════════════╗
+  # ║   END-TO-END SMOKE TEST         ║
+  # ╚══════════════════════════════════╝
+
+  smoke-test:
+    name: 💨 Production Smoke Test
+    runs-on: ubuntu-latest
+    needs: [deploy-backend, deploy-frontend]
+
+    steps:
+      - name: 🔥 Smoke test — backend health
+        run: |
+          URL="${{ secrets.RENDER_BACKEND_SERVICE_URL }}/api/health"
+          BODY=$(curl -sf "$URL")
+          echo "Response: $BODY"
+          if echo "$BODY" | grep -q '"status"'; then
+            echo "✅ Backend health endpoint OK"
+          else
+            echo "❌ Backend health check failed"
+            exit 1
+          fi
+
+      - name: 🔥 Smoke test — backend recipes endpoint
+        run: |
+          URL="${{ secrets.RENDER_BACKEND_SERVICE_URL }}/api/recipes?page=1&limit=1"
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+          if [ "$HTTP" = "200" ]; then
+            echo "✅ /api/recipes endpoint OK"
+          else
+            echo "❌ /api/recipes returned HTTP $HTTP"
+            exit 1
+          fi
+
+      - name: 📋 Final deployment report
+        if: always()
+        run: |
+          echo "## 🚀 Production Deployment Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Platform | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend API | Render | ${{ needs.deploy-backend.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend App | Vercel | ${{ needs.deploy-frontend.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Smoke Tests | GitHub Actions | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployed commit:** \`${{ github.event.workflow_run.head_sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+
+  # ╔══════════════════════════════════╗
+  # ║   CREATE GITHUB RELEASE         ║
+  # ╚══════════════════════════════════╝
+
+  create-release:
+    name: 🏷️ Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: smoke-test
+    if: success()
+    permissions:
+      contents: write
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: 🏷️ Generate release tag
+        id: tag
+        run: |
+          TAG="v$(date +'%Y.%m.%d')-$(echo '${{ github.event.workflow_run.head_sha }}' | cut -c1-7)"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Generated tag: $TAG"
+
+      - name: 📝 Generate changelog from commits
+        id: changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            COMMITS=$(git log --oneline -20 --no-merges)
+          else
+            COMMITS=$(git log --oneline "$PREV_TAG"..HEAD --no-merges)
+          fi
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: 🎉 Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "RecipeVault ${{ steps.tag.outputs.tag }}"
+          body: |
+            ## 🍽️ RecipeVault — Production Release
+
+            **Deployed:** ${{ github.event.workflow_run.head_sha }}
+            **Date:** ${{ github.run_started_at }}
+
+            ### Changes
+            ```
+            ${{ steps.changelog.outputs.changelog }}
+            ```
+
+            ### Services
+            - 🟢 **Backend API:** ${{ secrets.RENDER_BACKEND_SERVICE_URL }}
+            - ⚛️ **Frontend App:** See Vercel dashboard
+
+            ---
+            *Automatically generated by CI/CD pipeline*
+          draft: false
+          prerelease: false
