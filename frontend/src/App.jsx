@@ -4,6 +4,7 @@ import Navbar from '@/components/Navbar';
 import SearchBar from '@/components/SearchBar';
 import RecipeGrid from '@/components/RecipeGrid';
 import RecipeModal from '@/components/RecipeModal';
+import RecipeDetailModal from '@/components/RecipeDetailModal';
 import { useRecipes } from '@/hooks/useRecipes';
 import { Sparkles } from 'lucide-react';
 
@@ -19,6 +20,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
+  const [viewTarget, setViewTarget] = useState(null); // recipe being viewed
   const [toast, setToast] = useState(null); // { message, type }
 
   // ── Refs for GSAP ──────────────────────────────────────────────────────────
@@ -150,6 +152,9 @@ export default function App() {
     setEditTarget(null);
   };
 
+  const openView = (recipe) => setViewTarget(recipe);
+  const closeView = () => setViewTarget(null);
+
   return (
     <div className="min-h-screen bg-mesh">
       {/* Navbar */}
@@ -215,16 +220,25 @@ export default function App() {
           recipes={recipes}
           onEdit={openEdit}
           onDelete={handleDelete}
+          onView={openView}
           isLoading={isLoading}
         />
       </main>
 
-      {/* Recipe Modal */}
+      {/* Recipe Create/Edit Modal */}
       <RecipeModal
         isOpen={isModalOpen}
         onClose={closeModal}
         onSubmit={handleModalSubmit}
         editTarget={editTarget}
+      />
+
+      {/* Recipe Detail/View Modal */}
+      <RecipeDetailModal
+        recipe={viewTarget}
+        isOpen={Boolean(viewTarget)}
+        onClose={closeView}
+        onEdit={openEdit}
       />
 
       {/* Toast notification */}
