@@ -14,39 +14,39 @@ export default function App() {
   const { fetchAllRecipes, searchRecipes, createRecipe, updateRecipe, deleteRecipe } =
     useRecipes();
 
-  // ── Core state ──────────────────────────────────────────────────────────────
+  // Core state 
   const [recipes, setRecipes]       = useState([]);
   const [dbCount, setDbCount]       = useState(0);
   const [apiCount, setApiCount]     = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading]   = useState(false);
 
-  // ── Pagination / infinite scroll state ─────────────────────────────────────
+  // Pagination / infinite scroll state 
   const [currentPage, setCurrentPage]     = useState(1);
   const [hasMore, setHasMore]             = useState(false);
   const [totalCount, setTotalCount]       = useState(0);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
 
-  // ── Modal state ─────────────────────────────────────────────────────────────
+  // Modal state  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editTarget, setEditTarget]   = useState(null);
   const [viewTarget, setViewTarget]   = useState(null);
   const [toast, setToast]             = useState(null);
 
-  // ── Refs ─────────────────────────────────────────────────────────────────────
+  //    Refs                                                                      
   const heroRef     = useRef(null);
   const searchRef   = useRef(null);
   const sentinelRef = useRef(null);   // Intersection Observer target
   const toastTimer  = useRef(null);
 
-  // ── GSAP page-load animation ────────────────────────────────────────────────
+  //    GSAP page-load animation                                                 
   useEffect(() => {
     const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
     tl.fromTo(heroRef.current,   { opacity: 0, y: -30 }, { opacity: 1, y: 0, duration: 0.8 })
       .fromTo(searchRef.current, { opacity: 0, y: 20  }, { opacity: 1, y: 0, duration: 0.6 }, '-=0.4');
   }, []);
 
-  // ── Load page 1 on mount ────────────────────────────────────────────────────
+  //    Load page 1 on mount                                                     
   useEffect(() => {
     const load = async () => {
       setIsLoading(true);
@@ -65,7 +65,7 @@ export default function App() {
     load();
   }, []);
 
-  // ── Infinite scroll — Intersection Observer on sentinel div ─────────────────
+  //    Infinite scroll   Intersection Observer on sentinel div                  
   useEffect(() => {
     if (!sentinelRef.current) return;
 
@@ -104,14 +104,14 @@ export default function App() {
     }
   };
 
-  // ── Toast helper ────────────────────────────────────────────────────────────
+  //    Toast helper                                                             
   const showToast = (message, type = 'success') => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ message, type });
     toastTimer.current = setTimeout(() => setToast(null), 3500);
   };
 
-  // ── Search handler ──────────────────────────────────────────────────────────
+  //    Search handler                                                           
   const handleSearch = useCallback(
     async (query) => {
       if (!query) {
@@ -151,7 +151,7 @@ export default function App() {
     [fetchAllRecipes, searchRecipes]
   );
 
-  // ── Create / Edit ────────────────────────────────────────────────────────────
+  //    Create / Edit                                                             
   const handleModalSubmit = async (formData) => {
     if (editTarget) {
       const updated = await updateRecipe(editTarget._id, formData);
@@ -166,7 +166,7 @@ export default function App() {
     }
   };
 
-  // ── Delete ───────────────────────────────────────────────────────────────────
+  //    Delete                                                                    
   const handleDelete = async (id) => {
     const recipe = recipes.find((r) => r._id === id);
     try {
@@ -180,7 +180,7 @@ export default function App() {
     }
   };
 
-  // ── Modal helpers ────────────────────────────────────────────────────────────
+  //    Modal helpers                                                             
   const openCreate = () => { setEditTarget(null); setIsModalOpen(true); };
   const openEdit   = (r) => { setEditTarget(r);   setIsModalOpen(true); };
   const closeModal = () => { setIsModalOpen(false); setEditTarget(null); };
@@ -240,7 +240,7 @@ export default function App() {
                   Browse your complete recipe collection
                   {totalCount > 0 && (
                     <span className="ml-1 text-slate-600">
-                      — showing {recipes.length} of {totalCount}
+                        showing {recipes.length} of {totalCount}
                     </span>
                   )}
                 </>
@@ -258,7 +258,7 @@ export default function App() {
           isLoading={isLoading}
         />
 
-        {/* ── Infinite scroll sentinel ── */}
+        {/*    Infinite scroll sentinel    */}
         {!searchQuery && (
           <div ref={sentinelRef} className="flex flex-col items-center py-6 gap-3">
             {isFetchingMore && (
