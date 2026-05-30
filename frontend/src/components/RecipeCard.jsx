@@ -26,7 +26,7 @@ export default function RecipeCard({ recipe, onEdit, onDelete, onView }) {
       className="recipe-card glass-card rounded-2xl overflow-hidden flex flex-col group"
       data-recipe-card
     >
-      {/* ── Image ── */}
+      {/*    Image    */}
       <div className="relative aspect-video overflow-hidden bg-slate-800">
         {image ? (
           <img
@@ -54,7 +54,7 @@ export default function RecipeCard({ recipe, onEdit, onDelete, onView }) {
           </Badge>
         </div>
 
-        {/* Action buttons — revealed on hover */}
+        {/* Action buttons   revealed on hover */}
         <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-all duration-200 translate-y-1 group-hover:translate-y-0">
           {/* View */}
           <button
@@ -89,7 +89,7 @@ export default function RecipeCard({ recipe, onEdit, onDelete, onView }) {
         <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-slate-900/60 to-transparent pointer-events-none" />
       </div>
 
-      {/* ── Content ── */}
+      {/*    Content    */}
       <div className="p-4 flex flex-col gap-2 flex-1">
         <h3 className="font-semibold text-white leading-snug line-clamp-2 text-[15px]">
           {name}
@@ -106,18 +106,18 @@ export default function RecipeCard({ recipe, onEdit, onDelete, onView }) {
           <div className="flex items-center gap-1 text-slate-400">
             <Clock className="h-3.5 w-3.5 text-emerald-500" />
             <span className="text-xs font-medium">
-              {totalTime > 0 ? `${totalTime} min` : '—'}
+              {totalTime > 0 ? `${totalTime} min` : ' '}
             </span>
           </div>
           <div className="flex items-center gap-1 text-slate-400">
             <Users className="h-3.5 w-3.5 text-emerald-500" />
             <span className="text-xs font-medium">
-              {servings > 0 ? `${servings} serving${servings !== 1 ? 's' : ''}` : '—'}
+              {servings > 0 ? `${servings} serving${servings !== 1 ? 's' : ''}` : ' '}
             </span>
           </div>
         </div>
 
-        {/* View button — always visible at bottom */}
+        {/* View button   always visible at bottom */}
         <button
           onClick={() => onView(recipe)}
           className="mt-1 w-full rounded-xl border border-slate-700/60 bg-slate-800/40 py-1.5 text-xs font-medium text-slate-300 hover:bg-emerald-500/10 hover:border-emerald-500/30 hover:text-emerald-300 transition-all duration-200"
