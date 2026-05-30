@@ -1,16 +1,16 @@
-import express from 'express';
-import axios from 'axios';
-import Recipe from '../models/Recipe.js';
+import express from "express";
+import axios from "axios";
+import Recipe from "../models/Recipe.js";
 
 const router = express.Router();
 
-// ─── GET /api/recipes ─────────────────────────────────────────────────────────
+//     GET /api/recipes
 // Paginated fetch of all local recipes (initial load + infinite scroll)
-router.get('/', async (req, res) => {
+router.get("/", async (req, res) => {
   try {
-    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(50, parseInt(req.query.limit) || 8);
-    const skip  = (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
     const [recipes, total] = await Promise.all([
       Recipe.find().sort({ createdAt: -1 }).skip(skip).limit(limit),
@@ -18,7 +18,7 @@ router.get('/', async (req, res) => {
     ]);
 
     res.json({
-      source: 'database',
+      source: "database",
       recipes,
       total,
       page,
@@ -26,15 +26,14 @@ router.get('/', async (req, res) => {
       hasMore: skip + recipes.length < total,
     });
   } catch (err) {
-    console.error('GET /api/recipes error:', err.message);
-    res.status(500).json({ message: 'Server error fetching recipes.' });
+    console.error("GET /api/recipes error:", err.message);
+    res.status(500).json({ message: "Server error fetching recipes." });
   }
 });
 
-
-// ─── GET /api/recipes/suggestions?q=query ────────────────────────────────────
+//     GET /api/recipes/suggestions?q=query
 // Fast typeahead: returns up to 6 recipe names from the local DB
-router.get('/suggestions', async (req, res) => {
+router.get("/suggestions", async (req, res) => {
   const query = req.query.q?.trim();
 
   if (!query || query.length < 2) {
@@ -43,63 +42,63 @@ router.get('/suggestions', async (req, res) => {
 
   try {
     const suggestions = await Recipe.find(
-      { name: { $regex: query, $options: 'i' } },
-      { name: 1, _id: 1, image: 1, source: 1 }
+      { name: { $regex: query, $options: "i" } },
+      { name: 1, _id: 1, image: 1, source: 1 },
     )
       .limit(6)
       .lean();
 
     res.json({ suggestions });
   } catch (err) {
-    console.error('GET /api/recipes/suggestions error:', err.message);
-    res.status(500).json({ message: 'Server error fetching suggestions.' });
+    console.error("GET /api/recipes/suggestions error:", err.message);
+    res.status(500).json({ message: "Server error fetching suggestions." });
   }
 });
 
-// ─── GET /api/recipes/search?q=query ─────────────────────────────────────────
+//     GET /api/recipes/search?q=query
 // Smart Hybrid Search:
 //   1. Query local MongoDB for matching recipes  → dbRecipes
 //   2. ALWAYS also query DummyJSON external API
 //   3. Filter API results to only those NOT already in DB → apiRecipes (new)
 //   4. Upsert the new API recipes into MongoDB
 //   5. Return { dbRecipes, apiRecipes } so the frontend can show both with labels
-router.get('/search', async (req, res) => {
+router.get("/search", async (req, res) => {
   const query = req.query.q?.trim();
 
   if (!query) {
-    return res.status(400).json({ message: 'Search query is required.' });
+    return res.status(400).json({ message: "Search query is required." });
   }
 
   try {
-    // ── Step 1: Search local DB ───────────────────────────────────────────────
+    //    Step 1: Search local DB
     const dbRecipes = await Recipe.find({
-      name: { $regex: query, $options: 'i' },
+      name: { $regex: query, $options: "i" },
     }).lean();
 
     console.log(`[DB] "${query}" → ${dbRecipes.length} local result(s)`);
 
-    // ── Step 2: Always fetch from external API ────────────────────────────────
+    //    Step 2: Always fetch from external API
     let apiRecipes = [];
 
     try {
       const { data } = await axios.get(
         `https://dummyjson.com/recipes/search?q=${encodeURIComponent(query)}`,
-        { timeout: 8000 }
+        { timeout: 8000 },
       );
 
       if (data.recipes && data.recipes.length > 0) {
         // Build a set of external IDs already present in the DB
         const existingExternalIds = new Set(
-          dbRecipes.map((r) => r.id).filter(Boolean)
+          dbRecipes.map((r) => r.id).filter(Boolean),
         );
 
         // Only keep API results that are NOT already stored locally
         const newFromApi = data.recipes.filter(
-          (r) => !existingExternalIds.has(String(r.id))
+          (r) => !existingExternalIds.has(String(r.id)),
         );
 
         console.log(
-          `[API] "${query}" → ${data.recipes.length} total, ${newFromApi.length} new (not in DB)`
+          `[API] "${query}" → ${data.recipes.length} total, ${newFromApi.length} new (not in DB)`,
         );
 
         if (newFromApi.length > 0) {
@@ -112,8 +111,8 @@ router.get('/search', async (req, res) => {
             prepTimeMinutes: r.prepTimeMinutes || 0,
             cookTimeMinutes: r.cookTimeMinutes || 0,
             servings: r.servings || 1,
-            image: r.image || '',
-            source: 'DummyJSON',
+            image: r.image || "",
+            source: "DummyJSON",
           }));
 
           // Upsert into DB
@@ -132,7 +131,9 @@ router.get('/search', async (req, res) => {
             id: { $in: mapped.map((r) => r.id) },
           }).lean();
 
-          console.log(`[STORE] Saved ${apiRecipes.length} new recipe(s) for "${query}"`);
+          console.log(
+            `[STORE] Saved ${apiRecipes.length} new recipe(s) for "${query}"`,
+          );
         }
       }
     } catch (apiErr) {
@@ -141,24 +142,31 @@ router.get('/search', async (req, res) => {
     }
 
     res.json({
-      dbRecipes,       // recipes already in local DB
-      apiRecipes,      // newly fetched from API (and now also saved to DB)
+      dbRecipes, // recipes already in local DB
+      apiRecipes, // newly fetched from API (and now also saved to DB)
       total: dbRecipes.length + apiRecipes.length,
     });
   } catch (err) {
-    console.error('GET /api/recipes/search error:', err.message);
-    res.status(500).json({ message: 'Server error during search.' });
+    console.error("GET /api/recipes/search error:", err.message);
+    res.status(500).json({ message: "Server error during search." });
   }
 });
 
-// ─── POST /api/recipes ────────────────────────────────────────────────────────
-router.post('/', async (req, res) => {
+//     POST /api/recipes
+router.post("/", async (req, res) => {
   try {
-    const { name, ingredients, instructions, prepTimeMinutes, cookTimeMinutes, servings, image } =
-      req.body;
+    const {
+      name,
+      ingredients,
+      instructions,
+      prepTimeMinutes,
+      cookTimeMinutes,
+      servings,
+      image,
+    } = req.body;
 
     if (!name) {
-      return res.status(400).json({ message: 'Recipe name is required.' });
+      return res.status(400).json({ message: "Recipe name is required." });
     }
 
     const newRecipe = new Recipe({
@@ -168,50 +176,51 @@ router.post('/', async (req, res) => {
       prepTimeMinutes: prepTimeMinutes || 0,
       cookTimeMinutes: cookTimeMinutes || 0,
       servings: servings || 1,
-      image: image || '',
-      source: 'User',
+      image: image || "",
+      source: "User",
     });
 
     const saved = await newRecipe.save();
     res.status(201).json(saved);
   } catch (err) {
-    console.error('POST /api/recipes error:', err.message);
-    res.status(500).json({ message: 'Server error creating recipe.' });
+    console.error("POST /api/recipes error:", err.message);
+    res.status(500).json({ message: "Server error creating recipe." });
   }
 });
 
-// ─── PUT /api/recipes/:id ─────────────────────────────────────────────────────
-router.put('/:id', async (req, res) => {
+//     PUT /api/recipes/:id
+router.put("/:id", async (req, res) => {
   try {
     const updated = await Recipe.findByIdAndUpdate(
       req.params.id,
       { $set: req.body },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     );
 
     if (!updated) {
-      return res.status(404).json({ message: 'Recipe not found.' });
+      return res.status(404).json({ message: "Recipe not found." });
     }
 
     res.json(updated);
   } catch (err) {
-    console.error('PUT /api/recipes/:id error:', err.message);
-    res.status(500).json({ message: 'Server error updating recipe.' });
+    console.error("PUT /api/recipes/:id error:", err.message);
+    res.status(500).json({ message: "Server error updating recipe." });
   }
 });
 
-// ─── DELETE /api/recipes/:id ──────────────────────────────────────────────────
-router.delete('/:id', async (req, res) => {
+//     DELETE /api/recipes/:id
+router.delete("/:id", async (req, res) => {
   try {
     const deleted = await Recipe.findByIdAndDelete(req.params.id);
 
     if (!deleted) {
-      return res.status(404).json({ message: 'Recipe not found.' });}
+      return res.status(404).json({ message: "Recipe not found." });
+    }
 
-    res.json({ message: 'Recipe deleted successfully.', id: req.params.id });
+    res.json({ message: "Recipe deleted successfully.", id: req.params.id });
   } catch (err) {
-    console.error('DELETE /api/recipes/:id error:', err.message);
-    res.status(500).json({ message: 'Server error deleting recipe.' });
+    console.error("DELETE /api/recipes/:id error:", err.message);
+    res.status(500).json({ message: "Server error deleting recipe." });
   }
 });
 
