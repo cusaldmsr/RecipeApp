@@ -3,7 +3,7 @@ import gsap from 'gsap';
 import RecipeCard from './RecipeCard';
 import { ChefHat, SearchX } from 'lucide-react';
 
-export default function RecipeGrid({ recipes, onEdit, onDelete, isLoading }) {
+export default function RecipeGrid({ recipes, onEdit, onDelete, onView, isLoading }) {
   const gridRef = useRef(null);
 
   // GSAP stagger animation whenever recipes change
@@ -88,6 +88,7 @@ export default function RecipeGrid({ recipes, onEdit, onDelete, isLoading }) {
           recipe={recipe}
           onEdit={onEdit}
           onDelete={onDelete}
+          onView={onView}
         />
       ))}
     </div>

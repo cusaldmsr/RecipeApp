@@ -1,0 +1,194 @@
+# ════════════════════════════════════════════════════════════════════════════
+# 🧪  CD — Deploy to STAGING
+#
+# Triggers when:
+#   • A push lands on `develop` AND CI workflow completes successfully.
+#
+# Staging mirrors production but deploys to separate Render + Vercel services.
+# No manual approval gate — staging is continuous.
+#
+# Required GitHub Secrets:
+#   RENDER_STAGING_DEPLOY_HOOK_URL   — Render deploy hook (staging service)
+#   RENDER_STAGING_SERVICE_URL       — Public URL of staging backend
+#   VERCEL_TOKEN                     — Same Vercel token (shared)
+#   VERCEL_ORG_ID                    — Same Vercel org
+#   VERCEL_PROJECT_ID                — Same Vercel project (staging = preview)
+#   VITE_API_BASE_URL_STAGING        — Staging backend URL for the frontend build
+# ════════════════════════════════════════════════════════════════════════════
+
+name: 🧪 CD — Deploy to Staging
+
+on:
+  workflow_run:
+    workflows: ['🔍 CI — Continuous Integration']
+    types: [completed]
+    branches: [develop]
+
+concurrency:
+  group: cd-staging
+  cancel-in-progress: true     # cancel older staging deploys if a new push arrives
+
+env:
+  NODE_VERSION: '20.x'
+
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+
+  ci-check:
+    name: 🛡️ CI Gate Check
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - run: echo "CI passed — deploying to staging..."
+
+
+  # ╔══════════════════════════════════╗
+  # ║   BACKEND — STAGING             ║
+  # ╚══════════════════════════════════╝
+
+  deploy-backend-staging:
+    name: 🟡 Deploy Backend → Render (Staging)
+    runs-on: ubuntu-latest
+    needs: ci-check
+    environment:
+      name: staging
+      url: ${{ secrets.RENDER_STAGING_SERVICE_URL }}
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: 🚀 Trigger staging deploy hook
+        run: |
+          HTTP=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+            -X POST "${{ secrets.RENDER_STAGING_DEPLOY_HOOK_URL }}")
+          echo "Deploy hook status: HTTP $HTTP"
+          cat /tmp/resp.json
+          [ "$HTTP" = "201" ] || [ "$HTTP" = "200" ] || exit 1
+
+      - name: ⏳ Wait for backend to boot
+        run: |
+          URL="${{ secrets.RENDER_STAGING_SERVICE_URL }}/api/health"
+          for i in $(seq 1 24); do
+            S=$(curl -s -o /dev/null -w "%{http_code}" "$URL" || echo "000")
+            [ "$S" = "200" ] && { echo "✅ Staging backend up (attempt $i)"; exit 0; }
+            echo "Attempt $i/24 — HTTP $S — waiting 10s..."
+            sleep 10
+          done
+          echo "❌ Staging health check timed out"
+          exit 1
+
+      - name: 📋 Summary
+        if: always()
+        run: |
+          echo "### 🟡 Staging Backend" >> $GITHUB_STEP_SUMMARY
+          echo "Status: ${{ job.status }} | URL: ${{ secrets.RENDER_STAGING_SERVICE_URL }}" >> $GITHUB_STEP_SUMMARY
+
+
+  # ╔══════════════════════════════════╗
+  # ║   FRONTEND — STAGING (PREVIEW)  ║
+  # ╚══════════════════════════════════╝
+
+  deploy-frontend-staging:
+    name: ⚛️ Deploy Frontend → Vercel (Preview)
+    runs-on: ubuntu-latest
+    needs: deploy-backend-staging
+    environment:
+      name: staging
+      url: ${{ steps.deploy.outputs.url }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 📦 Install
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: 🏗️ Build (staging config)
+        working-directory: ./frontend
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL_STAGING }}
+
+      - name: 🚀 Deploy preview to Vercel
+        id: deploy
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          # No --prod flag = Vercel Preview deployment
+          working-directory: ./frontend
+
+      - name: 💬 Comment preview URL on PR (if applicable)
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          script: |
+            const url = '${{ steps.deploy.outputs.url }}';
+            const sha  = '${{ github.event.workflow_run.head_sha }}';
+            // Find open PRs targeting develop with this HEAD sha
+            const prs = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              base: 'develop',
+            });
+            for (const pr of prs.data) {
+              if (pr.head.sha === sha) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  body: `## 🧪 Staging Preview Deployed!\n\n| | |\n|--|--|\n| 🔗 Preview URL | ${url} |\n| 📦 Commit | \`${sha.slice(0,7)}\` |\n| ⏱ Built at | ${new Date().toISOString()} |`,
+                });
+              }
+            }
+
+      - name: 📋 Summary
+        if: always()
+        run: |
+          echo "### ⚛️ Staging Frontend" >> $GITHUB_STEP_SUMMARY
+          echo "Preview URL: ${{ steps.deploy.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+
+
+  # ╔══════════════════════════════════╗
+  # ║   SMOKE TEST — STAGING          ║
+  # ╚══════════════════════════════════╝
+
+  smoke-test-staging:
+    name: 💨 Staging Smoke Test
+    runs-on: ubuntu-latest
+    needs: [deploy-backend-staging, deploy-frontend-staging]
+
+    steps:
+      - name: 🔥 Health check
+        run: |
+          STATUS=$(curl -sf "${{ secrets.RENDER_STAGING_SERVICE_URL }}/api/health" | grep -c '"status"' || echo 0)
+          [ "$STATUS" -gt "0" ] && echo "✅ Staging backend healthy" || { echo "❌ Health check failed"; exit 1; }
+
+      - name: 🔥 Recipes endpoint check
+        run: |
+          H=$(curl -s -o /dev/null -w "%{http_code}" "${{ secrets.RENDER_STAGING_SERVICE_URL }}/api/recipes")
+          [ "$H" = "200" ] && echo "✅ /api/recipes OK" || { echo "❌ HTTP $H"; exit 1; }
+
+      - name: 📋 Final staging report
+        if: always()
+        run: |
+          echo "## 🧪 Staging Deployment Report" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend  | ${{ needs.deploy-backend-staging.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | ${{ needs.deploy-frontend-staging.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Smoke    | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
