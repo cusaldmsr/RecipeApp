@@ -13,7 +13,7 @@
     "test": "echo '\u26a0\ufe0f  No tests yet \u2014 skipping' && exit 0"
   },
   "dependencies": {
-    "axios": "^1.7.2",
+    "axios": "^1.19.0",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
