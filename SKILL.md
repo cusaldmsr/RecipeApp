@@ -1,5 +1,5 @@
 ---
-name: RecipeVault Skills & Technologies
+name: recipevault-skills-technologies
 description: Comprehensive inventory of the programming languages, frameworks, libraries, tools, and DevOps technologies used in RecipeVault.
 ---
 
